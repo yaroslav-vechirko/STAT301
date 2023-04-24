@@ -1,0 +1,90 @@
+---
+title: "Untitled"
+author: "yaroslav vechirko"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(nlme)
+library(multcomp)
+```
+
+```{r}
+#top 5 counties for each question
+
+#question 1
+Wastedata1%>%
+  filter(Category== "Metal")%>%
+  group_by(County)%>%
+  summarize(total= sum(`Res Tons`))%>%
+  arrange(desc(total))%>%
+  top_n(5)
+
+#question 2
+Wastedata1%>%
+  filter(Category!= "Organic")%>%
+  group_by(County)%>%
+  summarize(total= sum(`Res Tons`))%>%
+  arrange(desc(total))%>%
+  top_n(5)
+```
+
+
+
+```{r}
+#question 1
+#one way anova
+
+question1one<-Wastedata1%>%
+  group_by(County,Year)%>%
+  filter(County %in% c("Hennepin","Ramsey","Stearns","Anoka","Benton"), Category == "Metal")%>%
+  summarize(Total = sum(`Res Tons`))
+question1one
+
+model1<-aov(Total~County,question1one)
+summary(model1)
+TukeyHSD(model1)
+
+question1one%>%
+  group_by(County)%>%
+  summarize(avetotal= mean(Total), setotal= sd(Total)/sqrt(length(Total)), tstar= qt(1-.05/2, length(Total)-1))%>%
+  ggplot(aes(x=factor(County,levels= c("Hennepin","Ramsey","Stearns","Anoka","Benton")), y=avetotal))+geom_point()+geom_errorbar(aes(ymin= avetotal-tstar*setotal, ymax= avetotal+tstar*setotal))+ylim(c(0,30000))+labs(y="Average amount of metal recycling",x="County",title= "Mean metal recycling difference between counties")
+
+
+```
+```{r}
+#question 2
+#two way repeated measure
+
+question2one<-Wastedata1%>%
+  filter(County %in% c("Hennepin","Ramsey","Dakota","Anoka","Stearns"),Category != "Organic")%>%
+  group_by(County,Year,Category)%>%
+  summarize(res= sum(`Res Tons`))%>%
+  spread(Category,res)%>%
+  mutate(total= Glass+Hazardous+Metal+Other+Paper+Plastic,Period= ifelse(Year < 2000 ,"Period 1",ifelse(Year > 2008, "Period 3","Period 2" )))
+
+question2three<-question2one%>%
+  group_by(County,Period)%>%
+  summarize(sumG= sum(Glass),sumPl= sum(Plastic),sumH= sum(Hazardous), sumM= sum(Metal), sumO= sum(Other), sumPa= sum(Paper))%>%
+  gather(category, total,sumG,sumPl,sumH,sumM,sumO,sumPa)%>%
+  mutate(Period= as.factor(Period),category= as.factor(category))
+
+
+question2one
+question2three
+
+model3<-lme(total~category+Period+category*Period, random=~ 1|County, data= question2three)
+anova(model3)
+
+posthoc1<-glht(model3, linfct=mcp(category="Tukey"))
+summary(posthoc1)
+
+```
+
